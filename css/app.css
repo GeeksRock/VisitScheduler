@@ -1,0 +1,135 @@
+[v-cloak] { display:none; }
+
+/*giving credit... https://stackoverflow.com/questions/8738072/forcing-web-site-to-show-in-landscape-mode-only*/
+#warning-message { display: none; }
+@media only screen and (orientation:portrait){
+	#app { display:none; }
+	#warning-message { display:block; }
+}
+@media only screen and (orientation:landscape){
+	#warning-message { display:none; }
+}
+
+.active-option-bg {
+    background-color: lightgrey;
+}
+.cursor {
+	cursor: pointer;
+}
+
+.disabled {
+	color: lightgrey!important;
+}
+
+.save {
+	color: green;
+}
+
+.cancel {
+	color: red;
+}
+
+.edit {
+	color: blue;
+}
+
+.delete {
+	color: grey;
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
+label.top-space {
+	margin-top: 12px!important;
+}
+
+.date-time-picker {
+	width:95%;
+}
+.date-time-picker-sm {
+	width:90%;
+}
+.time-col {
+	padding:0px;
+}
+
+.notes, .client-edit-opts {
+	width: 100%;	
+}
+
+.notes > span {
+	float:right;
+}
+
+.notes > i {
+	margin-right: 3px;
+}
+
+.center-text {
+	text-align: center;
+}
+
+.clear-left {
+	clear:left;
+}
+
+.pusher {
+    min-height: 50%!important;
+}
+
+/*giving credit... https://appendto.com/2016/09/css-simple-sticky-footer/*/
+.footer {
+      width:100%;
+      padding:10px;
+      background:black;
+      color:white;
+      font-weight:bold;
+      font-size:18px;
+      text-align:center;
+      position:fixed;    
+      bottom:0;        
+      left:0;    
+}
+
+.text-right {
+	float:right;
+}
+
+.added-by-current-user {
+	font-weight:bold;
+	font-style:italic;
+	font-size:small;
+}
+.not-added-by-current-user {
+	font-style:italic;
+	font-size:small;
+}
+
+@media screen and (max-width: 300px) {
+	.mobile-only { display:none; }
+}
+.mobile-only { display:inline; }
+
+@media screen and (max-width: 1000px) {
+    .page-waiter > div.page-waiter-counter { display:none; }
+	.page-waiter > div.page-waiter-records { display:none; }
+	.page-waiter > div.page-waiter-center { display:block; white-space:nowrap; margin-left:30%;}
+	.mobile-only { display:none; }
+}
+	
+.page-waiter > div {
+    position: relative;
+    width: 33%;
+    float: left;
+}
+
+.page-waiter-center {
+    text-align:center;
+}
+
+.page-waiter-right {
+    text-align: right;
+    display: block;
+}
