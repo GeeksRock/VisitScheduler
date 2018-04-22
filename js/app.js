@@ -1,156 +1,510 @@
-	var pageWaiter = Vue.component('pageWaiter', {
-		/* [devNote]:
-			component doesn't hit the db; no need for security check
+    $(window).on('hashchange', function(){
+        /* 	[todo]: update all areas to use hash navigation
+			[devNote]:
+			On each hash change, update the $root hash property.
+			Child components will be listening for the change on $root.
 		*/
-		/* component.model.options
-			{
-				dataWaiterDataSource: array,
-				dataWaiterCallBack: func
-			}
+		app.hash = window.location.hash;
+    });
+	
+	var app = new Vue({
+		/* [toDo]: 
+			re-vamp this component to use hash navigation
 		*/
-		template: '#pageWaiter',
-		props: ['model'],
-		watch: {
-			'model.dataWaiterDataSource': function () {
-				this.initDefaults();
-			},
-			recordsPerPage: function (newValue, oldValue) {
-				this.initDefaults();
+		el: "#app",
+		data: {
+			clientSearch: false,
+			visitSearch: false,
+			option: "menu",
+			hash: "",
+			loggedInUser: {},
+			failedSecurityCheck: false,
+			showError: false,
+			errorObj: {
+				errorContent: null,
+				errorTitle: null
 			}
 		},
-		data: function () {
-			return {
-				pageData: null,
-				recordsPerPage: 5
-			};
+		computed: {
+			//todo: update entire app to use hash navigation!!!
+			hashStats: function () {
+				return {
+					hash: this.hash,
+					option: this.option,
+					clientSearch: this.clientSearch,
+					visitSearch: this.visitSearch
+				};
+			}
+		},
+		watch: {
+			hash: function (newVal, oldVal) {
+				//debugger
+				switch (newVal) {
+					case "":
+						this.option = "menu";
+					break;
+					case "visits":
+						this.option = "visitList";
+					break;
+					case "clients":
+						this.option = "clientList";						
+					break;
+					case "users":
+						this.option = "userList";
+					break;
+				}
+			},
+			option: function (newVal, oldVal) {
+				if (newVal === "menu") {
+					this.clientSearch = false;
+					this.visitSearch = false;
+				}
+			},
+			clientSearch: function (newVal, oldVal) {
+				if (newVal === true) {
+					this.option = 'clientSearch';
+				}
+			},
+			visitSearch: function (newVal, oldVal) {
+				if (newVal === true) {
+					this.option = 'visitSearch';
+				}
+			}
 		},
 		methods: {
-			nextPage: function () {
-				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(Waiter.serveNextPage().current_page));
-				this.pageData = Waiter.servePageData();
-			},
-			prevPage: function () {
-				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(Waiter.servePrevPage().current_page));
-				this.pageData = Waiter.servePageData();
-			},
-			initDefaults: function () {
-				if (!this.model.dataWaiterDataSource) {
-				  this.dataSource = [];
-				} else {
-				  this.dataSource = this.model.dataWaiterDataSource;
-				}
+			getSession: function () {
+				if (this.$root.failedSecurityCheck) { return; }
+				var session = this;
+				$.ajaxSetup({cache: false});
 
-				Waiter.takeDataOrder(this.dataSource, this.recordsPerPage).serveSelectedPage(1);
-				this.pageData = Waiter.servePageData();
-				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(this.pageData.current_page));
-			}
-		},
-		computed:{
-			pluralism: function () {
-				return (this.pageData.number_of_records === 1) ? "record" : "records";
+				utils.async('php/session.php', {allow_pass_through: 1},
+					function (error) {
+					  if (error.indexOf("error.php") > -1) {
+						session.$root.executeAccountModifiedSecurityProcedures("session");
+					  } else {
+						  session.$root.executeUnexpectedErrorProcedures("verifying", "session");
+					  }
+					},
+					function (data) {
+					  if (data.indexOf("error.php") > -1) {
+						session.$root.executeAccountModifiedSecurityProcedures("session");
+					  } else if (utils.jsonTryParse(data)) {
+							session.loggedInUser = JSON.parse(data);
+					  } else {
+						    document.location.href = "https://www.clac.site/ChurchScheduler/error.php";
+					  }
+					});
+			},
+			handleAccountAndSecurityErrors: function (error, phpFileName) {
+			  if (error.indexOf("error.php") > -1) {
+				this.executeAccountModifiedSecurityProcedures(phpFileName);
+			  }
+			},
+			handleDataBaseResultErrors: function (results, phpFileName) {
+			  if (result.indexOf("error.php") > -1) {
+				this.executeUnexpectedErrorProcedures(phpFileName);
+			  }
+			},
+			executeUnexpectedErrorProcedures: function (action, entity) {
+			  if (this.$root.failedSecurityCheck) { return; }
+			  var contentString = utils.stringBuilder(action, "this", true);
+				  contentString = utils.stringBuilder(contentString, ".");
+
+			  var errorObj = {
+						  errorTitle: "Unexpected Error!",
+						  errorContent: "An unexpected error occurred while " + contentString + " \n Try refeshing your browser window. \n If the problem persists, contact your System Administrator."
+					  };
+
+			  //this.setErrors(errorObj);
+			  return;
+			},
+			executeAccountModifiedSecurityProcedures: function (location) {
+				debugger;
+			  //this function is executed when a logged-in user's credentials
+			  //have been altered and they no longer have acess to the app
+			  this.failedSecurityCheck = true;
+			  var errorObj = utils.accountModifiedErrorObj(location);
+			  this.setErrors(errorObj);
+			  //this.logOut();
+			},
+			setErrors: function (errorObj) {
+				var hr = "";
+				for (var l = 0; l < errorObj.errorTitle.length; l++) {
+					hr += "=";
+				}
+				this.errorObj = errorObj;				
+				this.showError = true;
+			},
+			logOut: function  () {
+				var session = this;
+				$.ajaxSetup({cache: false});
+				$.post("php/logOut.php", function (data) {
+					session.loggedInUser = {};
+					document.location.href = "https://www.clac.site/ChurchScheduler/login.php";
+				});
 			}
 		},
 		created: function () {
-			this.initDefaults();
+			if (this.failedSecurityCheck) { return; } //do we need this check?
+			window.location.hash = '';
+			this.getSession();
 		}
-	});
-
-	var clientSearch = Vue.component('clientSearch', {
-		/* component.model.options			
-			{
-				showPickList: bool,
-				resultsCallBack: func,
-				selectionCallBack: func,
-				searchingCallBack: func
-			}
+	});	
+	
+	var userList = Vue.component('UserList', {
+		/* [toDo]:
+			re-vamp this component to use hash navigation
 		*/
-		template: "#clientSearch",
-		props: ["model"],
+		template: "#userList",
 		data: function () {
 			return {
-				query: "",
-				results: [],
-				isSearching: false,
-				noSearchResults: false 
-			};
+				confirmLogout: false,
+				confirmPasswordReset: false,
+				notifyOfPasswordReset: false,
+				notifyOfDuplicateEmail: false,
+				notifyOfInvalidEmailAddress: false,
+				notifyOfInvalidFirstName: false,
+				notifyOfInvalidLastName: false,
+				//canResetPassword: update computed prop
+				option: "user-main",
+				sub_option: "",
+				user: {},
+				isEditing: false,
+				isLoadingUsers: false,
+				users: []
+			}
 		},
-		watch: {
-			query: function () {
-				this.search();
+		computed: {
+			attentionRequired: function () {
+				if (this.notifyOfDuplicateEmail) { return true; }
+				if (this.notifyOfInvalidEmailAddress) { return true; }
+				if (this.notifyOfInvalidFirstName) { return true; }
+				if (this.notifyOfInvalidLastName) { return true; }
+				if (this.notifyOfPasswordReset) { return true; }
+				if (this.confirmPasswordReset) { return true; }
+				return false;
+			},
+			hashStats: function () {
+				return {
+					hash: this.$parent.hash,
+					parentOption: this.$parent.option,
+					option: this.option,
+					subOption: this.sub_option
+				};
+			},
+			isLoggedInUser: function () {
+				var isLoggedInUser = false;
+				if (parseInt(this.$root.loggedInUser.id) === this.user.Id) {
+					isLoggedInUser = true;
+				}
+				return isLoggedInUser;
+			},
+			showEditControls: function () {
+				return this.option === 'user-edit';
+			},
+			canResetPassword: function () {
+				var canResetPassword = true;
+				
+				if (!this.$root.loggedInUser.isAdmin) { 
+					canResetPassword = false;
+				}
+				if (this.isLoggedInUser) {
+					canResetPassword = false;
+				}
+				
+				return canResetPassword;
+			},
+			actionText: function () {
+				if (this.$parent.option === "myProfile") { return "My Profile"; }
+				if (this.option === "user-edit") { return "Edit User"; }
+				if (this.$parent.option === "userList") { return "User List"; }
+				if (this.$parent.option === "userNew") { return "Add New User"; }				
+			}
+		},
+		watch: {	
+			'$parent.option': function (newVal, oldVal) {
+				switch(newVal) {
+					case "userNew": 
+						this.getNewUserTemplate();
+						this.option = "user-new";
+						break;
+					case "userList":
+						this.option = "user-main";
+						this.getUsers();
+						break;
+					case "myProfile":
+						this.option = "user-edit";
+						this.getMyProfile();
+						break;
+					default:
+						this.reset();
+						break;	
+				}
 			}
 		},
 		methods: {
-			clear: function () {
-				this.query = "";
-				this.results = [];
-				this.noSearchResults = false;
-				if (this.model) {
-					if (this.model.resultsCallBack && this.model.resultsCallBack(this.results));
-				} 
+			reset: function (){
+				this.confirmPasswordReset = false;
+				this.notifyOfPasswordReset = false;
+				//canResetPassword: update computed prop
+				this.option = "user-main";
+				this.sub_option = "";
+				this.user = {};
+				this.isEditing = false;
+				this.isLoadingUsers = false;
+				this.users = [];
+				if (this.originalUser) { this.originalUser = {}; }
 			},
-			getSelectedClient: function (client) {
-				if (this.model && this.model.selectionCallBack && this.model.selectionCallBack(client));
-			},
-			search: _.debounce(function () {
-			  if (this.$root.failedSecurityCheck) { return; }
-			  var searchComponent = this,
-				  loggedInUserDataWithSearchParam = {
-				  logged_in_user_id: this.$root.loggedInUser.id,
-				  logged_in_user_email: this.$root.loggedInUser.email,
-				  search_param: this.query
-				};
-				  this.isSearching = true;
-				  if (this.model.searchingCallBack && this.model.searchingCallBack(this.isSearching));
+			addUser: function (callBack) {
+				if (this.$root.failedSecurityCheck) { return; }
 
-				  if (this.query === "") {
-					this.isSearching = false;
-					if (this.model.searchingCallBack && this.model.searchingCallBack(this.isSearching));		
-					if (this.model) {
-						if (!searchComponent.model.showPickList && this.model.resultsCallBack && this.model.resultsCallBack(this.results));
-					} 					  
-				    return;
-				  }
-				  
-				  utils.async('php/getClients.php', loggedInUserDataWithSearchParam,
+				var phpFile = "php/addUser.php",
+				  userListComponent = this, 
+				  loggedInUserData = {
+					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
+					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
+					  first_name: userListComponent.user.FirstName,
+					  last_name: userListComponent.user.LastName,
+					  email: userListComponent.user.Email,
+					  phone: userListComponent.user.Phone,
+					  is_admin: userListComponent.user.IsAdmin,
+					  password: utils.userLogIns.generateRandomPassword(20)
+				  };
+				
+				  utils.async(phpFile, loggedInUserData,
 					  function (err) {
-						  if (err.indexOf("error.php") > -1) {
-							searchComponent.$root.executeAccountModifiedSecurityProcedures('php/getClients.php');
-							searchComponent.isSearching = false;
-							if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
-							return;
+						  if (err.indexOf("error.php") > -1) {							  
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							return; 
 						  }
-						  searchComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
-						  searchComponent.isSearching = false;
-						  if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
 					  },
 					  function (result) {
 						  if (result.indexOf("error.php") > -1) {
-							searchComponent.$root.executeAccountModifiedSecurityProcedures('php/getClients.php');
-							searchComponent.isSearching = false;
-							if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							if (callBack && callBack(result));
+							return;
+						  }
+						  if (result === "This email address is already in use.") {
+							  if (callBack && callBack(result));
+							  return;
+						  } else {
+							  if (utils.jsonTryParse(result)) {
+								userListComponent.users = JSON.parse(result);  
+							  } else {
+								userListComponent.users = result;  
+							  }
+							  userListComponent.users.forEach(function (user) {
+								user.Active = parseInt(user.Active);
+								user.IsAdmin = parseInt(user.IsAdmin);
+							  });
+						  }
+					  });	
+			},
+			updateUser: function () {
+				if (this.$root.failedSecurityCheck) { return; }
+				
+				var phpFile = "php/updateUser.php",
+				  userListComponent = this, 
+				  loggedInUserData = {
+					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
+					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
+					  first_name: userListComponent.user.FirstName,
+					  last_name: userListComponent.user.LastName,
+					  email: userListComponent.user.Email,
+					  phone: userListComponent.user.Phone,
+					  is_admin: userListComponent.user.IsAdmin,
+					  id: userListComponent.user.Id
+				  };
+				
+				  utils.async(phpFile, loggedInUserData,
+					  function (err) {
+						  if (err.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							userListComponent.isLoadingUsers = false;
+							return;
+						  }
+						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
+					  },
+					  function (result) {
+						  if (result.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
 							return;
 						  }
 						  if (utils.jsonTryParse(result)) {
-							if (searchComponent.model) {
-								searchComponent.results = JSON.parse(result);
-								if (!searchComponent.model.showPickList && searchComponent.model.resultsCallBack && searchComponent.model.resultsCallBack(searchComponent.results));
-							}
+							userListComponent.users = JSON.parse(result);  
 						  } else {
-							if (searchComponent.model) {
-								searchComponent.results = result;
-								if (!searchComponent.model.showPickList && searchComponent.model.resultsCallBack && searchComponent.model.resultsCallBack(searchComponent.results));
-							}  
+							userListComponent.users = result;  
 						  }
-						  searchComponent.isSearching = false;
-						  if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+						  userListComponent.users.forEach(function (user) {
+							user.Active = parseInt(user.Active);
+							user.IsAdmin = parseInt(user.IsAdmin);
+						  });
+					  });	
+			},
+			resetUserPassword: function () {
+				this.notifyOfPasswordReset = true; 
+				this.confirmPasswordReset = false;
+
+				if (this.$root.failedSecurityCheck) { return; }
+				
+				var phpFile = "php/updateUserPassword.php",
+				  userListComponent = this, 
+				  loggedInUserData = {
+					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
+					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
+					  first_name: user.FirstName,
+					  last_name: user.LastName,
+					  email: user.Email,
+					  password: utils.userLogIns.generateRandomPassword(20)
+				  };
+				
+				  utils.async(phpFile, loggedInUserData,
+					  function (err) {
+						  if (err.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							return;
+						  }
+						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
+					  },
+					  function (result) {
+						  if (result.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							return;
+						  }
+						  if (utils.jsonTryParse(result)) {
+							userListComponent.users = JSON.parse(result);  
+						  } else {
+							userListComponent.users = result;  
+						  }
+						  userListComponent.users.forEach(function (user) {
+							user.Active = parseInt(user.Active);
+							user.IsAdmin = parseInt(user.IsAdmin);
+						  });
+					  });	
+			},	
+			getMyProfile: function () {
+				var userProfile = this.$root.loggedInUser;
+				this.user.Email = userProfile.email;
+				this.user.FirstName = userProfile.firstName;
+				this.user.LastName = userProfile.lastName;
+				this.user.Phone = userProfile.phone;
+				this.user.Id = parseInt(userProfile.id);
+				this.user.IsAdmin = parseInt(userProfile.isAdmin);
+				this.user.Active = 1;
+			},
+			getUsers: function () {
+				if (this.$root.failedSecurityCheck) { return; }
+				
+				var phpFile = "php/getUsers.php",
+				  userListComponent = this, 
+				  loggedInUserData = {
+					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
+					  logged_in_user_email: userListComponent.$root.loggedInUser.email
+				  };
+				  this.isLoadingUsers = true;
+				
+				  utils.async(phpFile, loggedInUserData,
+					  function (err) {
+						  if (err.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							userListComponent.isLoadingUsers = false;
+							return;
+						  }
+						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
+						  userListComponent.isLoadingUsers = false;
+					  },
+					  function (result) {
+						  if (result.indexOf("error.php") > -1) {
+							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
+							userListComponent.isLoadingUsers = false;
+							return;
+						  }
+						  if (utils.jsonTryParse(result)) {
+							userListComponent.users = JSON.parse(result);  
+						  } else {
+							userListComponent.users = result;  
+						  }
+						  userListComponent.users.forEach(function (user) {
+							user.Id = parseInt(user.Id);
+							user.Active = parseInt(user.Active);
+							user.IsAdmin = parseInt(user.IsAdmin);
+						  });
 						  
-						  if (searchComponent.results.length === 0) {
-							  searchComponent.noSearchResults = true;
-						  } else {
-							  searchComponent.noSearchResults = false;
-						  }
-					  });
-			}, 500)
+						  userListComponent.isLoadingUsers = false;
+					  });	
+			},	
+			getNewUserTemplate: function () {
+				var template = {
+					FirstName: "",
+					LastName: "",
+					Email: "",
+					Phone:"",
+					IsAdmin: false
+				};
+				this.user = template;
+			},
+			openUser: function (user) {
+				this.option = "user-edit";
+				this.user = user;
+			},
+			cancel: function () {
+				if (this.option === "user-edit") {
+					this.isEditing = false;
+				}
+				if (this.$parent.option === "userNew") {
+					this.$parent.option = "menu";
+					this.option = "user-main";
+				}
+				this.notifyOfDuplicateEmail = false;
+				this.notifyOfInvalidEmailAddress = false;
+				this.notifyOfInvalidFirstName = false;
+				this.notifyOfInvalidLastName = false;
+				this.notifyOfPasswordReset = false;
+				this.confirmPasswordReset = false;
+			},
+			save: function () {
+				debugger
+				var isEmailValid = utils.isValidEmailAddress(this.user.Email), 
+					isLastNameValid = this.user.LastName.trim().length > 0, 
+					isFirstNameValid = this.user.FirstName.trim().length > 0, 
+					canSave  = isEmailValid && isLastNameValid && isFirstNameValid;
+
+				if (!canSave) {
+					if (!isEmailValid) { this.notifyOfInvalidEmailAddress = true; }
+					if (!isLastNameValid) { this.notifyOfInvalidLastName = true; }
+					if (!isFirstNameValid) { this.notifyOfInvalidFirstName = true; }
+				} else {
+					debugger;
+					var self = this;
+					if (this.user.hasOwnProperty("Id")) {					
+						this.updateUser(function (updateUserResult) {
+							if (updateUserResult === "This email address is already in use.") {
+								self.notifyOfDuplicateEmail = true;
+							} else if (true) {
+								
+							} else {
+								self.cancel();
+							}
+						});
+						this.cancel();
+					} else {
+						this.addUser(function (addUserResult) {
+							if (addUserResult === "This email address is already in use.") {
+								self.notifyOfDuplicateEmail = true;
+							} else if (true) {
+								
+							} else {
+								self.cancel();
+							}
+						});
+					}
+				}
+			}
+		},
+		created: function () {
+			//untracked properties; used for cancellations
+			this.originalUser = {};
 		}
 	});
 	
@@ -1472,517 +1826,148 @@
 			this.lastCalendarSelection = "";
 		}
 	});
-	
-	var userList = Vue.component('UserList', {
-		/* [toDo]:
-			re-vamp this component to use hash navigation
-		*/
-		template: "#userList",
+		
+	var pageWaiter = Vue.component('pageWaiter', {
+		template: '#pageWaiter',
+		props: ['model'],
+		watch: {
+			'model.dataWaiterDataSource': function () {
+				this.initDefaults();
+			},
+			recordsPerPage: function (newValue, oldValue) {
+				this.initDefaults();
+			}
+		},
 		data: function () {
 			return {
-				confirmLogout: false,
-				confirmPasswordReset: false,
-				notifyOfPasswordReset: false,
-				notifyOfDuplicateEmail: false,
-				notifyOfInvalidEmailAddress: false,
-				notifyOfInvalidFirstName: false,
-				notifyOfInvalidLastName: false,
-				//canResetPassword: update computed prop
-				option: "user-main",
-				sub_option: "",
-				user: {},
-				isEditing: false,
-				isLoadingUsers: false,
-				users: []
-			}
-		},
-		computed: {
-			attentionRequired: function () {
-				if (this.notifyOfDuplicateEmail) { return true; }
-				if (this.notifyOfInvalidEmailAddress) { return true; }
-				if (this.notifyOfInvalidFirstName) { return true; }
-				if (this.notifyOfInvalidLastName) { return true; }
-				if (this.notifyOfPasswordReset) { return true; }
-				if (this.confirmPasswordReset) { return true; }
-				return false;
-			},
-			hashStats: function () {
-				return {
-					hash: this.$parent.hash,
-					parentOption: this.$parent.option,
-					option: this.option,
-					subOption: this.sub_option
-				};
-			},
-			isLoggedInUser: function () {
-				var isLoggedInUser = false;
-				if (parseInt(this.$root.loggedInUser.id) === this.user.Id) {
-					isLoggedInUser = true;
-				}
-				return isLoggedInUser;
-			},
-			showEditControls: function () {
-				return this.option === 'user-edit';
-			},
-			canResetPassword: function () {
-				var canResetPassword = true;
-				
-				if (!this.$root.loggedInUser.isAdmin) { 
-					canResetPassword = false;
-				}
-				if (this.isLoggedInUser) {
-					canResetPassword = false;
-				}
-				
-				return canResetPassword;
-			},
-			actionText: function () {
-				if (this.$parent.option === "myProfile") { return "My Profile"; }
-				if (this.option === "user-edit") { return "Edit User"; }
-				if (this.$parent.option === "userList") { return "User List"; }
-				if (this.$parent.option === "userNew") { return "Add New User"; }				
-			}
-		},
-		watch: {	
-			'$parent.option': function (newVal, oldVal) {
-				switch(newVal) {
-					case "userNew": 
-						this.getNewUserTemplate();
-						this.option = "user-new";
-						break;
-					case "userList":
-						this.option = "user-main";
-						this.getUsers();
-						break;
-					case "myProfile":
-						this.option = "user-edit";
-						this.getMyProfile();
-						break;
-					default:
-						this.reset();
-						break;	
-				}
-			}
+				pageData: null,
+				recordsPerPage: 5
+			};
 		},
 		methods: {
-			reset: function (){
-				this.confirmPasswordReset = false;
-				this.notifyOfPasswordReset = false;
-				//canResetPassword: update computed prop
-				this.option = "user-main";
-				this.sub_option = "";
-				this.user = {};
-				this.isEditing = false;
-				this.isLoadingUsers = false;
-				this.users = [];
-				if (this.originalUser) { this.originalUser = {}; }
+			nextPage: function () {
+				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(Waiter.serveNextPage().current_page));
+				this.pageData = Waiter.servePageData();
 			},
-			addUser: function (callBack) {
-				if (this.$root.failedSecurityCheck) { return; }
-
-				var phpFile = "php/addUser.php",
-				  userListComponent = this, 
-				  loggedInUserData = {
-					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
-					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
-					  first_name: userListComponent.user.FirstName,
-					  last_name: userListComponent.user.LastName,
-					  email: userListComponent.user.Email,
-					  phone: userListComponent.user.Phone,
-					  is_admin: userListComponent.user.IsAdmin,
-					  password: utils.userLogIns.generateRandomPassword(20)
-				  };
-				
-				  utils.async(phpFile, loggedInUserData,
-					  function (err) {
-						  if (err.indexOf("error.php") > -1) {							  
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							return; 
-						  }
-						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
-					  },
-					  function (result) {
-						  if (result.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							if (callBack && callBack(result));
-							return;
-						  }
-						  if (result === "This email address is already in use.") {
-							  if (callBack && callBack(result));
-							  return;
-						  } else {
-							  if (utils.jsonTryParse(result)) {
-								userListComponent.users = JSON.parse(result);  
-							  } else {
-								userListComponent.users = result;  
-							  }
-							  userListComponent.users.forEach(function (user) {
-								user.Active = parseInt(user.Active);
-								user.IsAdmin = parseInt(user.IsAdmin);
-							  });
-						  }
-					  });	
+			prevPage: function () {
+				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(Waiter.servePrevPage().current_page));
+				this.pageData = Waiter.servePageData();
 			},
-			updateUser: function () {
-				if (this.$root.failedSecurityCheck) { return; }
-				
-				var phpFile = "php/updateUser.php",
-				  userListComponent = this, 
-				  loggedInUserData = {
-					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
-					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
-					  first_name: userListComponent.user.FirstName,
-					  last_name: userListComponent.user.LastName,
-					  email: userListComponent.user.Email,
-					  phone: userListComponent.user.Phone,
-					  is_admin: userListComponent.user.IsAdmin,
-					  id: userListComponent.user.Id
-				  };
-				
-				  utils.async(phpFile, loggedInUserData,
-					  function (err) {
-						  if (err.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							userListComponent.isLoadingUsers = false;
-							return;
-						  }
-						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
-					  },
-					  function (result) {
-						  if (result.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							return;
-						  }
-						  if (utils.jsonTryParse(result)) {
-							userListComponent.users = JSON.parse(result);  
-						  } else {
-							userListComponent.users = result;  
-						  }
-						  userListComponent.users.forEach(function (user) {
-							user.Active = parseInt(user.Active);
-							user.IsAdmin = parseInt(user.IsAdmin);
-						  });
-					  });	
-			},
-			resetUserPassword: function () {
-				this.notifyOfPasswordReset = true; 
-				this.confirmPasswordReset = false;
-
-				if (this.$root.failedSecurityCheck) { return; }
-				
-				var phpFile = "php/updateUserPassword.php",
-				  userListComponent = this, 
-				  loggedInUserData = {
-					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
-					  logged_in_user_email: userListComponent.$root.loggedInUser.email,
-					  first_name: user.FirstName,
-					  last_name: user.LastName,
-					  email: user.Email,
-					  password: utils.userLogIns.generateRandomPassword(20)
-				  };
-				
-				  utils.async(phpFile, loggedInUserData,
-					  function (err) {
-						  if (err.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							return;
-						  }
-						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
-					  },
-					  function (result) {
-						  if (result.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							return;
-						  }
-						  if (utils.jsonTryParse(result)) {
-							userListComponent.users = JSON.parse(result);  
-						  } else {
-							userListComponent.users = result;  
-						  }
-						  userListComponent.users.forEach(function (user) {
-							user.Active = parseInt(user.Active);
-							user.IsAdmin = parseInt(user.IsAdmin);
-						  });
-					  });	
-			},	
-			getMyProfile: function () {
-				var userProfile = this.$root.loggedInUser;
-				this.user.Email = userProfile.email;
-				this.user.FirstName = userProfile.firstName;
-				this.user.LastName = userProfile.lastName;
-				this.user.Phone = userProfile.phone;
-				this.user.Id = parseInt(userProfile.id);
-				this.user.IsAdmin = parseInt(userProfile.isAdmin);
-				this.user.Active = 1;
-			    //this.option = "user-edit";
-				//this.sub_option = "";
-				//this.$root.option = "userProfile";
-			},
-			getUsers: function () {
-				if (this.$root.failedSecurityCheck) { return; }
-				
-				var phpFile = "php/getUsers.php",
-				  userListComponent = this, 
-				  loggedInUserData = {
-					  logged_in_user_id: userListComponent.$root.loggedInUser.id,
-					  logged_in_user_email: userListComponent.$root.loggedInUser.email
-				  };
-				  this.isLoadingUsers = true;
-				
-				  utils.async(phpFile, loggedInUserData,
-					  function (err) {
-						  if (err.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							userListComponent.isLoadingUsers = false;
-							return;
-						  }
-						  userListComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
-						  userListComponent.isLoadingUsers = false;
-					  },
-					  function (result) {
-						  if (result.indexOf("error.php") > -1) {
-							userListComponent.$root.executeAccountModifiedSecurityProcedures(phpFile);
-							userListComponent.isLoadingUsers = false;
-							return;
-						  }
-						  if (utils.jsonTryParse(result)) {
-							userListComponent.users = JSON.parse(result);  
-						  } else {
-							userListComponent.users = result;  
-						  }
-						  userListComponent.users.forEach(function (user) {
-							user.Id = parseInt(user.Id);
-							user.Active = parseInt(user.Active);
-							user.IsAdmin = parseInt(user.IsAdmin);
-						  });
-						  
-						  userListComponent.isLoadingUsers = false;
-					  });	
-			},	
-			getNewUserTemplate: function () {
-				var template = {
-					FirstName: "",
-					LastName: "",
-					Email: "",
-					Phone:"",
-					IsAdmin: false
-				};
-				this.user = template;
-			},
-			openUser: function (user) {
-				this.option = "user-edit";
-				this.user = user;
-			},
-			cancel: function () {
-				if (this.option === "user-edit") {
-					this.isEditing = false;
-				}
-				if (this.$parent.option === "userNew") {
-					this.$parent.option = "menu";
-					this.option = "user-main";
-				}
-				this.notifyOfDuplicateEmail = false;
-				this.notifyOfInvalidEmailAddress = false;
-				this.notifyOfInvalidFirstName = false;
-				this.notifyOfInvalidLastName = false;
-				this.notifyOfPasswordReset = false;
-				this.confirmPasswordReset = false;
-			},
-			save: function () {
-				debugger
-				var isEmailValid = utils.isValidEmailAddress(this.user.Email), 
-					isLastNameValid = this.user.LastName.trim().length > 0, 
-					isFirstNameValid = this.user.FirstName.trim().length > 0, 
-					canSave  = isEmailValid && isLastNameValid && isFirstNameValid;
-
-				if (!canSave) {
-					if (!isEmailValid) { this.notifyOfInvalidEmailAddress = true; }
-					if (!isLastNameValid) { this.notifyOfInvalidLastName = true; }
-					if (!isFirstNameValid) { this.notifyOfInvalidFirstName = true; }
+			initDefaults: function () {
+				if (!this.model.dataWaiterDataSource) {
+				  this.dataSource = [];
 				} else {
-					debugger;
-					var self = this;
-					if (this.user.hasOwnProperty("Id")) {					
-						this.updateUser(function (updateUserResult) {
-							if (updateUserResult === "This email address is already in use.") {
-								self.notifyOfDuplicateEmail = true;
-							} else if (true) {
-								
-							} else {
-								self.cancel();
-							}
-						});
-						this.cancel();
-					} else {
-						this.addUser(function (addUserResult) {
-							if (addUserResult === "This email address is already in use.") {
-								self.notifyOfDuplicateEmail = true;
-							} else if (true) {
-								
-							} else {
-								self.cancel();
-							}
-						});
-					}
+				  this.dataSource = this.model.dataWaiterDataSource;
 				}
+
+				Waiter.takeDataOrder(this.dataSource, this.recordsPerPage).serveSelectedPage(1);
+				this.pageData = Waiter.servePageData();
+				if (this.model.dataWaiterCallBack && this.model.dataWaiterCallBack(this.pageData.current_page));
+			}
+		},
+		computed:{
+			pluralism: function () {
+				return (this.pageData.number_of_records === 1) ? "record" : "records";
 			}
 		},
 		created: function () {
-			//untracked properties; used for cancellations
-			this.originalUser = {};
+			this.initDefaults();
+		}
+	});
+
+	var clientSearch = Vue.component('clientSearch', {
+		template: "#clientSearch",
+		props: ["model"],
+		data: function () {
+			return {
+				query: "",
+				results: [],
+				isSearching: false,
+				noSearchResults: false 
+			};
+		},
+		watch: {
+			query: function () {
+				this.search();
+			}
+		},
+		methods: {
+			clear: function () {
+				this.query = "";
+				this.results = [];
+				this.noSearchResults = false;
+				if (this.model) {
+					if (this.model.resultsCallBack && this.model.resultsCallBack(this.results));
+				} 
+			},
+			getSelectedClient: function (client) {
+				if (this.model && this.model.selectionCallBack && this.model.selectionCallBack(client));
+			},
+			search: _.debounce(function () {
+			  if (this.$root.failedSecurityCheck) { return; }
+			  var searchComponent = this,
+				  loggedInUserDataWithSearchParam = {
+				  logged_in_user_id: this.$root.loggedInUser.id,
+				  logged_in_user_email: this.$root.loggedInUser.email,
+				  search_param: this.query
+				};
+				  this.isSearching = true;
+				  if (this.model.searchingCallBack && this.model.searchingCallBack(this.isSearching));
+
+				  if (this.query === "") {
+					this.isSearching = false;
+					if (this.model.searchingCallBack && this.model.searchingCallBack(this.isSearching));		
+					if (this.model) {
+						if (!searchComponent.model.showPickList && this.model.resultsCallBack && this.model.resultsCallBack(this.results));
+					} 					  
+				    return;
+				  }
+				  
+				  utils.async('php/getClients.php', loggedInUserDataWithSearchParam,
+					  function (err) {
+						  if (err.indexOf("error.php") > -1) {
+							searchComponent.$root.executeAccountModifiedSecurityProcedures('php/getClients.php');
+							searchComponent.isSearching = false;
+							if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+							return;
+						  }
+						  searchComponent.$root.executeUnexpectedErrorProcedures("loading", "data");
+						  searchComponent.isSearching = false;
+						  if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+					  },
+					  function (result) {
+						  if (result.indexOf("error.php") > -1) {
+							searchComponent.$root.executeAccountModifiedSecurityProcedures('php/getClients.php');
+							searchComponent.isSearching = false;
+							if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+							return;
+						  }
+						  if (utils.jsonTryParse(result)) {
+							if (searchComponent.model) {
+								searchComponent.results = JSON.parse(result);
+								if (!searchComponent.model.showPickList && searchComponent.model.resultsCallBack && searchComponent.model.resultsCallBack(searchComponent.results));
+							}
+						  } else {
+							if (searchComponent.model) {
+								searchComponent.results = result;
+								if (!searchComponent.model.showPickList && searchComponent.model.resultsCallBack && searchComponent.model.resultsCallBack(searchComponent.results));
+							}  
+						  }
+						  searchComponent.isSearching = false;
+						  if (searchComponent.model.searchingCallBack && searchComponent.model.searchingCallBack(searchComponent.isSearching));
+						  
+						  if (searchComponent.results.length === 0) {
+							  searchComponent.noSearchResults = true;
+						  } else {
+							  searchComponent.noSearchResults = false;
+						  }
+					  });
+			}, 500)
 		}
 	});
 	
-	var app = new Vue({
-		/* [toDo]: 
-			re-vamp this component to use hash navigation
-		*/
-		el: "#app",
-		data: {
-			clientSearch: false,
-			visitSearch: false,
-			option: "menu",
-			hash: "",
-			loggedInUser: {},
-			failedSecurityCheck: false,
-			showError: false,
-			errorObj: {
-				errorContent: null,
-				errorTitle: null
-			}
-		},
-		computed: {
-			//todo: update entire app to use hash navigation!!!
-			hashStats: function () {
-				return {
-					hash: this.hash,
-					option: this.option,
-					clientSearch: this.clientSearch,
-					visitSearch: this.visitSearch
-				};
-			}
-		},
-		watch: {
-			hash: function (newVal, oldVal) {
-				//debugger
-				switch (newVal) {
-					case "":
-						this.option = "menu";
-					break;
-					case "visits":
-						this.option = "visitList";
-					break;
-					case "clients":
-						this.option = "clientList";						
-					break;
-					case "users":
-						this.option = "userList";
-					break;
-				}
-			},
-			option: function (newVal, oldVal) {
-				if (newVal === "menu") {
-					this.clientSearch = false;
-					this.visitSearch = false;
-				}
-			},
-			clientSearch: function (newVal, oldVal) {
-				if (newVal === true) {
-					this.option = 'clientSearch';
-				}
-			},
-			visitSearch: function (newVal, oldVal) {
-				if (newVal === true) {
-					this.option = 'visitSearch';
-				}
-			}
-		},
-		methods: {
-			getSession: function () {
-				if (this.$root.failedSecurityCheck) { return; }
-				var session = this;
-				$.ajaxSetup({cache: false});
 
-				utils.async('php/session.php', {allow_pass_through: 1},
-					function (error) {
-					  if (error.indexOf("error.php") > -1) {
-						session.$root.executeAccountModifiedSecurityProcedures("session");
-					  } else {
-						  session.$root.executeUnexpectedErrorProcedures("verifying", "session");
-					  }
-					},
-					function (data) {
-					  if (data.indexOf("error.php") > -1) {
-						session.$root.executeAccountModifiedSecurityProcedures("session");
-					  } else if (utils.jsonTryParse(data)) {
-							session.loggedInUser = JSON.parse(data);
-					  } else {
-						    document.location.href = "https://www.clac.site/ChurchScheduler/error.php";
-					  }
-					});
-			},
-			handleAccountAndSecurityErrors: function (error, phpFileName) {
-			  if (error.indexOf("error.php") > -1) {
-				this.executeAccountModifiedSecurityProcedures(phpFileName);
-			  }
-			},
-			handleDataBaseResultErrors: function (results, phpFileName) {
-			  if (result.indexOf("error.php") > -1) {
-				this.executeUnexpectedErrorProcedures(phpFileName);
-			  }
-			},
-			executeUnexpectedErrorProcedures: function (action, entity) {
-			  if (this.$root.failedSecurityCheck) { return; }
-			  var contentString = utils.stringBuilder(action, "this", true);
-				  contentString = utils.stringBuilder(contentString, ".");
-
-			  var errorObj = {
-						  errorTitle: "Unexpected Error!",
-						  errorContent: "An unexpected error occurred while " + contentString + " \n Try refeshing your browser window. \n If the problem persists, contact your System Administrator."
-					  };
-
-			  //this.setErrors(errorObj);
-			  return;
-			},
-			executeAccountModifiedSecurityProcedures: function (location) {
-				debugger;
-			  //this function is executed when a logged-in user's credentials
-			  //have been altered and they no longer have acess to the app
-			  this.failedSecurityCheck = true;
-			  var errorObj = utils.accountModifiedErrorObj(location);
-			  this.setErrors(errorObj);
-			  //this.logOut();
-			},
-			setErrors: function (errorObj) {
-				var hr = "";
-				for (var l = 0; l < errorObj.errorTitle.length; l++) {
-					hr += "=";
-				}
-				this.errorObj = errorObj;
-				//alert(errorObj.debug + "\n" + errorObj.errorTitle + "\n" + hr + "\n" + errorObj.errorContent);
-				//alert(errorObj.errorTitle + "\n" + hr + "\n" + errorObj.errorContent);
-				this.showError = true;
-			},
-			logOut: function  () {
-				var session = this;
-				$.ajaxSetup({cache: false});
-				$.post("php/logOut.php", function (data) {
-					session.loggedInUser = {};
-					document.location.href = "https://www.clac.site/ChurchScheduler/login.php";
-				});
-			}
-		},
-		created: function () {
-			if (this.failedSecurityCheck) { return; } //do we need this check?
-			window.location.hash = '';
-			this.getSession();
-		}
-	});	
 	
-    $(window).on('hashchange', function(){
-        /* [devNote]:
-			On each hash change, update the $root hash property.
-			Child components will be listening for the change on $root.
-		*/
-		app.hash = window.location.hash;
-    });
+
+	
+
